@@ -77,7 +77,7 @@ def get_parser_train(parents=None):
     parser.add_argument("--recompute_layers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=2, help="set global seed")
     parser.add_argument("--summary", type=ast.literal_eval, default=True, help="collect train loss scaler or not")
-
+    parser.add_argument("--strict_load", type=ast.literal_eval, default=True, help="strictly load the pretrain model")
     # args for ModelArts
     parser.add_argument("--enable_modelarts", type=ast.literal_eval, default=False, help="enable modelarts")
     parser.add_argument("--data_url", type=str, default="", help="ModelArts: obs path to dataset folder")
@@ -125,7 +125,7 @@ def train(args):
         ema = EMA(network, ema_network)
     else:
         ema = None
-    load_pretrain(network, args.weight, ema, args.ema_weight)  # load pretrain
+    load_pretrain(network, args.weight, ema, args.ema_weight, args.strict_load)  # load pretrain
     freeze_layers(network, args.freeze)  # freeze Layers
     ms.amp.auto_mixed_precision(network, amp_level=args.ms_amp_level)
     if ema:

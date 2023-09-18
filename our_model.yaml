@@ -1,0 +1,22 @@
+__BASE__: [
+  './configs/yolov8/yolov8m.yaml',
+]
+
+per_batch_size: 16 # 16 * 8 = 128
+img_size: 640 # image sizes
+weight: ./yolov8-m_500e_mAP505-8ff7a728.ckpt
+strict_load: False
+
+data:
+  dataset_name: shwd
+  train_set: /home/ma-user/work/data/train2017.txt
+  val_set: /home/ma-user/work/data/val2017.txt
+  test_set: /home/ma-user/work/data/val2017.txt
+  nc: 5
+  # class names
+  names: [ 'crack', 'crul', 'dent', 'material' , 'nick']
+
+optimizer:
+  lr_init: 0.001  # initial learning rate
+  
+  
