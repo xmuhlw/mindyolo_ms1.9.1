@@ -1,107 +1,81 @@
-# MindYOLO
+# MindYOLO_ms1.9.1
 
-<p align="left">
-    <a href="https://github.com/mindspore-lab/mindyolo/blob/master/README.md">
-        <img alt="docs" src="https://img.shields.io/badge/docs-latest-blue">
-    </a>
-    <a href="https://github.com/mindspore-lab/mindyolo/blob/master/LICENSE">
-        <img alt="GitHub" src="https://img.shields.io/github/license/mindspore-lab/mindcv.svg">
-    </a>
-    <a href="https://github.com/mindspore-lab/mindyolo/pulls">
-        <img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-pink.svg">
-    </a>
-</p>
+## 采用mindspore 1.9.1的镜像；
+首先创建好8卡的资源后通过notebook连接服务器；
+### 1. git载入对应的MindSpore的版本的模型，放在根目录；
+```
+git clone https://github.com/xmuhlw/mindyolo_ms1.9.1.git -b r0.1 
 
-MindYOLO is [MindSpore Lab](https://github.com/mindspore-lab)'s software toolbox that implements state-of-the-art YOLO series algorithms, [support list and benchmark](MODEL_ZOO.md). It is written in Python and powered by the [MindSpore](https://mindspore.cn/) AI framework.
+#MindSpore2.1之前不支持在910B上运行，另外910B的支持在逐步添加中,因此用r0.1的分支对应1.9.1的版本；
+```
+### 2. 通过modelarts的obs工具上传我们的数据，并且通过python来解压，因为自带的unzip指令无法解压超过5G的数据，并且数据与coco2017格式对应；
+```
+import moxing as mox
+mox.file.copy('obs://fiveclasses-yoloformat/fiveclasses-yoloformat.zip')
+```
+```
+import zipfile
+f = zipfile.ZipFile("/home/ma-user/work/fiveclasses-yoloformat.zip")# 压缩文件位置
+for file in f.namelist():
+    f.extract(file,"/home/ma-user/work/data/")#解压位置
+f.close()
+```
+### 3. 数据格式转换工具：*coco2yolo_utils*，因为自身数据集是COCO格式，而Mindyolo数据格式为yolo格式；
+- coco2yolo.py: 
+```
+python ./coco2yolo_utils/coco2yolo.py --json_path ./XXX/XXX.json --save_path ./labels
+```
+将coco格式的json文件转成txt形式并存储在./lables文件下
+- json_rename.py 
+```
+python ./coco2yolo_utils/json_rename.py 
+```
+若图片命名或者json文件中id,file_name等带有字符串需要重命名，json_rename.py可以实现图片跟json一一对应并且一键改名；
+- write2txt.py 将图片绝对路径写入txt文件，以便于读图片；
 
-The r0.1 branch supports **MindSpore 1.8.1**.
+### 4. 配置自己的yaml文件，配置文件主要包含数据集、数据增强、loss、optimizer、模型结构涉及的相应参数，由于MindYOLO提供yaml文件继承机制，可只将需要调整的参数编写为our_model.yaml，并继承MindYOLO提供的原生yaml文件即可，其内容如下：
+```
+__BASE__: [
+  './configs/yolov8/yolov8m.yaml',
+]
 
-<img src=".github/000000137950.jpg" />
+per_batch_size: 16 # 16 * 8 = 128
+img_size: 640 # image sizes
+weight: ./yolov8-m_500e_mAP505-8ff7a728.ckpt
+strict_load: False
 
+data:
+  dataset_name: shwd
+  train_set: /home/ma-user/work/data/train2017.txt
+  val_set: /home/ma-user/work/data/val2017.txt
+  test_set: /home/ma-user/work/data/val2017.txt
+  nc: 5
+  # class names
+  names: [ 'crack', 'crul', 'dent', 'material' , 'nick']
 
-## What is New 
+optimizer:
+  lr_init: 0.001  # initial learning rate
+```
+- __BASE__为一个列表，表示继承的yaml文件所在路径，可以继承多个yaml文件
+per_batch_size和img_size分别表示单卡上的batch_size和数据处理图片采用的图片尺寸
+- weight为上述提到的预训练模型的文件路径，strict_load表示丢弃shape不一致的参数
+- log_interval表示日志打印间隔
+- data字段下全部为数据集相关参数，其中dataset_name为自定义数据集名称，train_set、val_set、test_set分别为保存训练集、验证集、测试集图片路径的txt文件路径，nc为类别数量，names为类别名称
+- optimizer字段下的lr_init为经过warm_up之后的初始化学习率，此处相比默认参数缩小了10倍
+参数继承关系和参数说明可参考[configuration_CN.md](../../tutorials/configuration_CN.md)。
 
-- 2023/06/15
-
-1. New version: v0.1 is released!
-
-2. Support YOLOv3/v4/v5/v7/v8/X 6 models and release 23 weights, see [MODEL ZOO](MODEL_ZOO.md) for details.
-
-3. Models can be exported to MindIR/AIR format for deployment.
-
-4. New online documents are available!
-
-## Benchmark and Model Zoo
-
-See [MODEL ZOO](MODEL_ZOO.md).
-
-<details open>
-<summary><b>Supported Algorithms</b></summary>
-
-- [x] [YOLOv8](configs/yolov8)
-- [x] [YOLOv7](configs/yolov7)
-- [x] [YOLOX](configs/yolox)
-- [x] [YOLOv5](configs/yolov5)
-- [x] [YOLOv4](configs/yolov4)
-- [x] [YOLOv3](configs/yolov3)
-
-</details>
-
-## Installation
-
-### Dependency
-
+### 5. 模型代码调整，因为modelarts的显卡为Ascend 910B对MindSpore的动静统一的支持有限，因此采用r0.1分支对应的MindSpore 1.9.1版本，这边参考[#181 File Changes](https://github.com/mindspore-lab/mindyolo/pull/181/files)进行调整,支持pretrain模型的严格加载 *--strict_load = Trues*;
+### 6. 下载[MODEL_ZOO](https://github.com/mindspore-lab/mindyolo/blob/master/MODEL_ZOO.md)对应yolo版本的pretrain模型，
+### 7.安装依赖
 - mindspore >= 1.8.1
 - numpy >= 1.17.0
 - pyyaml >= 5.3
 - openmpi 4.0.3 (for distributed mode)
-
-To install the dependency, please run
+安装这些依赖，请执行以下命令
 ```shell
 pip install -r requirements.txt
 ```
-
-MindSpore can be easily installed by following the official [instructions](https://www.mindspore.cn/install) where you can select your hardware platform for the best fit. To run in distributed mode, [openmpi](https://www.open-mpi.org/software/ompi/v4.0/) is required to install.
-
-The following instructions assume the desired dependency is fulfilled.
-
-⚠️ The current version only supports the Ascend platform, and the GPU platform will be supported later.
-
-## Getting Started
-
-See [GETTING STARTED](GETTING_STARTED.md)
-
-## Learn More about MindYOLO
-
-To be supplemented.
-
-## Notes
-
-⚠️ The current version is based on the static shape of GRAPH. The dynamic shape of the PYNATIVE will be added later. Please look forward to it.
-
-### How to Contribute
-
-We appreciate all contributions including issues and PRs to make MindYOLO better. 
-
-Please refer to [CONTRIBUTING.md](CONTRIBUTING.md) for the contributing guideline.
-
-### License
-
-MindYOLO is released under the [Apache License 2.0](LICENSE.md).
-
-### Acknowledgement
-
-MindYOLO is an open source project that welcome any contribution and feedback. We wish that the toolbox and benchmark could serve the growing research community by providing a flexible as well as standardized toolkit to reimplement existing methods and develop their own new realtime object detection methods.
-
-### Citation
-
-If you find this project useful in your research, please consider cite:
-
-```latex
-@misc{MindSpore Object Detection YOLO 2023,
-    title={{MindSpore Object Detection YOLO}:MindSpore Object Detection YOLO Toolbox and Benchmark},
-    author={MindSpore YOLO Contributors},
-    howpublished = {\url{https://github.com/mindspore-lab/mindyolo}},
-    year={2023}
-}
+### 8.执行多卡训练
+```
+mpirun --allow-run-as-root -n 8 python train.py --config ./our_model.yaml --is_parallel True
 ```
